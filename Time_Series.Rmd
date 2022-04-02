@@ -1,0 +1,226 @@
+---
+title: "R Stock Forecast"
+author: "Ziyu(Peter) Hou"
+date: "08/05/2020"
+output:
+  pdf_document: 
+    fig_caption: yes
+    number_sections: yes
+    latex_engine: xelatex
+  html_document: default
+---
+
+# Forecasting
+
+Definition: usage of historical data for identifying patterns to predict future outcomes
+
+## Stochastic Process and Time Series
+
+**Stochastic Process:** is a sequency of random variable $\{X_n\}_{n = 0,1,...}. $ If it is a sequence, it is discrete.
+
+
+**Time Series** is a set of observations $x_t$, each one being recorded at a specified time
+
+**Time Series Data** is always finite and discrete. We consider the observations/samples of the overall stochastic process
+
+***Forecasting with Time Series Data can be simply interpreted as using finite information to predict the infinite further future.
+
+``` {r}
+data(AirPassengers)
+
+APB <- AirPassengers
+
+APB
+class(APB) # note that APB is of Time Series Object
+
+# To get the row sum, or year total, we can
+#1 - easiest way using aggregate
+
+YrAPB <- aggregate(APB)
+
+#2 - straightforward way using rowSums, but cannot be used for the blow plot
+mAPB <- matrix(APB, ncol = 12, nrow = 12)
+YrAPB <- rowSums(mAPB, seq(1, ncol(mAPB)))
+
+```
+We could plot the time series data to observe trend and seasonality. Note that we uses ```xaxt = "n"``` in our plot function, for indicating we would also to add in a new axit or text, but we don't want the old x-axis. Hence, by using xaxt = "n" to surpress the old x-axis.
+
+```{r}
+plot(APB,ylab="Air passenger counts",xaxt="n",main="Air passenger booking counts in 1000")
+axis(1, at = start(time(APB))[1]:end(time(APB))[1], labels = TRUE,las=2)
+
+plot(YrAPB, ylab="Air passenger counts", xaxt = "n", main = "Air passenger booking counts in 1000")
+axis(1, at = start(time(YrAPB))[1]:end(time(YrAPB))[1], labels = TRUE, las = 2)
+
+```
+To take a closer look at the seasonality, we could use boxplot
+ 
+``` {r}
+
+boxplot(APB~cycle(APB), xlab="Month", ylab="Monthly counts", main="Summary of counts for each month")
+```
+
+## Mean, Variances, and Covariances
+
+**Mean Function:** $\mu_t = E(Y_t)$ which is the expected value of the process at time 
+
+**Autocovariance Funcrion:** The autocovariance function of the process $Y_t$ is defined as the covariance between at two random variables at time measures s, t
+
+$$\gamma_{s,t} = Cov(Y_s, Y_t) = E[Y_s Y_t] - E[Y_s]E[Y_t] = E[Y_s Y_t] - \mu_s \mu_t $$
+
+***Do not assume that the price of the stock is independent from each time measure because of its property of being a stochastic process.***
+e.g. Under COVID-19, yesterday stock prices fall; we don't really expect the stock would rise today. We would expect it to be leveled or continue to fall.
+
+**Note that covatiance function is not bounded which means that one could have Cov(X,Y) = 200 or -200. It is hard for comparison purpose**
+
+- **Autocorrelation Function (ACF)** The ACF of the process $Y_t$ is defined as
+$$
+\rho_{s,t}=\text{Corr}(Y_s,Y_t)
+$$
+where we can write
+
+$$
+\begin{aligned}
+    \rho_{s,t}&=\text{Corr}(Y_s,Y_t)=\frac{\text{Cov}(Y_s,Y_t)}{\sqrt{\text{Var}(Y_s)\text{Var}(Y_t)}}
+\end{aligned}
+$$
+
+
+# Stock Forecast
+
+
+## Dataset Import
+
+``` {r}
+library(ggplot2)
+library(tseries)
+library(TSA)
+library(forecast)
+```
+
+``` {r}
+ZM <- read.csv("ZM.csv")
+head(ZM, 3)
+```
+
+Serveral important aspects to mention here
+1. Date only considers business day not including weekend, holiday
+   - The regular trading hours in US for (NYSE) and (Nasdaq) are 9:30 a.m. to 4:00 p.m. estern time
+2. Adj.Close - Adjusted Close Price
+   - e.g. business make official statement about stock price change
+   - e.g. exchanges Çå²Ö½»Ò×may cause price change, usually not high
+   - Adj.Close will be the open price tomorrow
+3. Volume - how many stock trade that day
+   - note for penny stock (low price stock)
+   - ***you purchased a lot, and price rises which means you made a lot of money in the stock markey. However, if its trading volume is not high (usually the case for penny stock), then you risk of not finding anyone who would likes to purchase your shares.***
+
+``` {r}
+str(ZM)
+```
+
+## Data Cleaning
+
+We only want the stock price that could represent the trading day stock. We'll use `Adj.Close` from this point forward
+
+``` {r}
+
+ZM <- data.frame(Date = ZM$Date, Price = ZM$Adj.Close)
+ZM$Date <- as.character(ZM$Date)
+str(ZM)
+```
+
+``` {r}
+plot(ZM$Price, type = "o", main = "Zoom Inc. Stock Price: January 02, 2020 to April 22, 2020",
+     xlab = "Time",
+     ylab = "Adjusted Closing Price",
+     xaxt = "n")
+axis(1, at = seq(from = 0, to = length(ZM$Price),
+                 by = 10)[-1],
+     labels = ZM$Date[seq(from = 0,
+                          to = length(ZM$Price),
+                          by = 10)])                         
+```
+Side Note:
+Stock Trading would be very active during January because everyone gets back from vacation
+Stock Trading would be not very active during December because everyone is waiting for the vacation
+
+Interpretation
+
+1. Trend: we can see that overall it is increasing since its inital public offering
+2. Major Drop: happened around end of March which was when the US market started to turmoil
+Always remeber, when gets interviewed with the question or any time get asked by this question, "will your model predict future". Always answer no, the model is purely based on the historical data, data wouldn't tell you everything, black swan evets could occur at any time, no one can actually predict what will happened in the future.
+3. Volatility: from the graph, we can see it exihibit clear variances over time, which is quite common for a company in the tech sector
+   - usually tech sectors have a lot of bubbles.
+4. Autoregressive Behaviour: The graph behaves similarly (generally increasing) locally despite of the mjor drop.
+5. Seasonality: this stock has gone to public less than a year, so we cannot really observe clear pattern for seasonality
+
+``` {r}
+plot(y=ZM$Price,x=zlag(ZM$Price),ylab='closing price', xlab='Previous closing price', main = "Fig2.  Scatter plot of neighboring price values")
+#zlag is the function from library forecast used to shift the data one day before (yesterday)
+
+index = 2:length(ZM$Price)
+cor(ZM$Price[index], zlag(ZM$Price)[index])
+
+```
+it correlation rate is about 0.97 which is a strong indicator of postive linear relationship. 
+
+## Lognormal Return
+return - initally invest 100, after a year, I get 110. the return rate is 10%
+If all the stock prices follow a lognormal distribution, then the return would follow lognormal distribution
+
+$$X = e^{\mu + \sigmaZ}, Z \sim N(0,1)$$
+
+The following is a comparsion between lognormal distribution and normal distribution
+
+``` {r}
+curve(dlnorm(x, 0, 1), col = "red", xlim = c(0, 6),
+main = "Lognormal vs Normal",
+xlab = "x",
+ylab = "Probability Density")
+curve(dnorm(x,2,1), col = "blue", add = TRUE)
+legend("topright", legend = c("Lognormal(0,1)", "N(2,1)"), col = c("red", "blue"))
+
+```
+By observation, lognormal has a right skewness with a very long tail. In other words, it is rare to observe return of greater than 1 which makes intuitive sense. 
+
+
+``` {r}
+log_price <- diff(log(ZM$Price), lag = 1)
+log_price <- log_price[!is.na(log_price)]
+
+plot(log_price, type = "l", main = "Zoom Inc. Log Return")
+```
+
+By observation, the graph is roughly symmetric up and down which shows it's mean value is always around 0.
+
+The mean value is around 0 makes sense under the assumed theory of efficienty market hypothesis. The hypothesis estbalished a world where all the information is available to everyone, hence the stock price will always reflect all the information available. Therefore, no one will really make money from it (return = 0).
+
+## Integrated Autoregressive Moving Average (ARIMA) Model
+
+### MA Model
+
+**Moving Average Process:** a process ${Y_t}$ is a moving average of order q, abbreviated the name to MA(q) if
+$$Y_t = Z_t - \theta_1 Z_{t-1} - \theta_2 Z_{t-2} - .. - \theta_q Z_{t-q}$$
+
+
+
+
+```{r}
+getTStime <- function(ats){
+  start <- start(ats)
+  end <- end(ats)
+  time <- list()
+  time[[1]] <- start
+  m <- 2
+  while(!(identical(start, end))){
+    start[2] <- start[2] + 1
+    if (start[2]==13){
+      start[1] <- start[1] + 1
+      start[2] <- 1
+    }
+    time[[m]] <- start
+    m <- m + 1
+  }
+  return(time)
+}
+```
